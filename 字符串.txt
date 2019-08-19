@@ -1,0 +1,13 @@
+ public boolean containsProp(String propName) {
+        String[] arr$ = this.propNames;
+        int len$ = arr$.length;
+
+        for(int i$ = 0; i$ < len$; ++i$) {
+            String aProp = arr$[i$];
+            if (aProp.equals(propName)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
