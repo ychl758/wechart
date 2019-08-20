@@ -1,0 +1,300 @@
+package com.going.atBsc.controller;
+
+
+import com.going.atBsc.domain.*;
+import com.going.common.excel.core.ReturnErrorMessage;
+import com.going.common.excel.service.ExcelInService;
+import com.going.common.excel.utils.Excel;
+import com.going.controller.GoingController;
+import com.going.dataset.Dataset;
+import com.going.exception.BaseException;
+import com.going.utils.DatasetUtils;
+import com.sun.org.apache.xerces.internal.xs.datatypes.ObjectList;
+import org.apache.poi.hssf.usermodel.HSSFCell;
+import org.apache.poi.hssf.usermodel.HSSFSheet;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.hibernate.annotations.Where;
+import org.mvel2.util.Make;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.multipart.MultipartFile;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+public  abstract  class ImportExcel extends GoingController {
+    public abstract List<ReturnErrorMessage> runExcelData(Map<String,List<Map<String, Object>>>  runAllMapList, HttpServletRequest request, HttpServletResponse response) throws InstantiationException, IllegalAccessException;
+
+
+    @Autowired
+    ExcelInService excelInService;
+    private Excel excel;
+
+    Workbook wb;
+
+    protected List<HSSFSheet> _sheets;
+
+
+    public Excel getExcel() {
+        return excel;
+    }
+
+    public void setExcel(Excel excel) {
+        this.excel = excel;
+    }
+
+    private String getCellValue(Cell cell) {
+        if (cell != null) {
+            cell.setCellType(HSSFCell.CELL_TYPE_STRING);
+        } else {
+            return "";
+        }
+        return cell.getRichStringCellValue().getString();
+    }
+
+    public Map<Integer, Sheet> getSheets(){
+        wb=excel.getCurrentWb();
+        Map<Integer,Sheet> sheetsMap = new HashMap<Integer, Sheet>();
+        for(int k = 0; k < wb.getNumberOfSheets(); ++k) {
+            sheetsMap.put(k,wb.getSheetAt(k));
+        }
+
+        return sheetsMap;
+    }
+    @RequestMapping(value = "/Atbscinfo/excel/")
+    public @ResponseBody
+    Dataset inExcel(@RequestParam(value = "file", required = false) MultipartFile file, HttpServletRequest request, HttpServletResponse response) throws IllegalAccessException, InstantiationException {
+        if (file == null) {
+            throw new BaseException("上传文件为空！");
+        }
+        String m = file.getOriginalFilename();
+/*        String fileType = m.substring(m.lastIndexOf("."));
+        String returMessage = "";
+        ReturnInExcelTpl returnInExcelTpl = new ReturnInExcelTpl();*/
+        String returMessage = "";
+        try {
+            excel = new Excel(file.getInputStream());
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new BaseException("excel读取错误！");
+        }
+        Map<Integer,Sheet> dataSheets = this.getSheets();
+        //定义一个用于存放所有sheet页数据的Map
+        Map<String,List<Map<String, Object>>> runAllListMap = new HashMap<String, List<Map<String, Object>>>();
+
+        //获取基本信息表EXCEL的字段
+        List<String> AtBscInfo = (new AtBscInfo()).getFieldName();
+        //获取审核情况表EXCEL的字段
+        List<String> AtBscInfoAudAta = (new AtBscInfoAudAta()).getFieldName();
+        //获取产品的界面表EXCEL的字段
+        List<String> AtBscInfoProSch = (new AtBscInfoProSch()).getFieldName();
+        //获取问卷的界面表EXCEL的字段
+          List<String> AtBscInfoQuest = (new AtBscInfoQuest()).getFieldName();
+          List<String> AtbscInfoInd=(new AtBscInfoInd()).getFieldName();
+        //获取税收表EXCEL的字段
+        List<String> AtBscInfoTaxSch = (new AtBscInfoTaxSch()).getFieldName();
+        for(int yic = 0;yic<dataSheets.size();yic++){
+            Sheet currentSheet  = dataSheets.get(yic);
+            String currentSheetName = currentSheet.getSheetName();
+            int  lastRowNum = currentSheet.getLastRowNum();
+            //当sheet页为信息表
+            if("信息表".equals(currentSheetName)){
+                List<Map<String, Object>> dataMapAtBscInfoList = new ArrayList<Map<String, Object>>();
+                for(int i = 5;i<lastRowNum;i++){       //从第5行开始
+                    try {
+                        Row row = currentSheet.getRow(i);//获取行数
+                        //数据
+                        Map<String, Object> dataMap = new HashMap<String, Object>();
+                        String checkString = "";
+                        for (int j = 0; j < 3; j++) {//3列
+                                String valueStr = this.getCellValue(row.getCell(j));
+                                checkString = checkString.concat(valueStr);
+                                dataMap.put(AtBscInfo.get(j), valueStr.trim());
+                       }
+                        if("".equals(checkString.trim()) || checkString == null){
+                            continue;
+                        }else{
+                            dataMapAtBscInfoList.add(dataMap);
+                        }
+
+                    } catch (Exception e) {
+                        ReturnErrorMessage returnErrorMessage = new ReturnErrorMessage();
+                        returnErrorMessage.setErrorRow(i - 1);
+                        returnErrorMessage.setErrorMessage(e.getMessage());
+                    }
+                }
+                runAllListMap.put(currentSheetName,dataMapAtBscInfoList);
+                continue;
+
+            }
+            //当sheet页为B001资产负债表
+            else if("税收表".equals(currentSheetName)){
+                List<Map<String, Object>> dataMapAtBscInfoTaxSchList = new ArrayList<Map<String, Object>>();
+                for(int i = 8;i<lastRowNum;i++){
+                    try {
+                        Row row = currentSheet.getRow(i);
+                        //数据
+                        Map<String, Object> dataMap = new HashMap<String, Object>();
+                        String checkString = "";
+                        for (int j = 0; j < 6; j++) {
+                                String valueStr = this.getCellValue(row.getCell(j));
+                            if("特别提醒:".equals(valueStr.trim()) ){
+                                break;
+                            }
+                                checkString = checkString.concat(valueStr);
+                                dataMap.put(AtBscInfoTaxSch.get(j), valueStr.trim());
+                        }
+                        if("".equals(checkString.trim()) || checkString == null){
+                            continue;
+                        }else{
+                            dataMapAtBscInfoTaxSchList.add(dataMap);
+                        }
+
+                    } catch (Exception e) {
+                        ReturnErrorMessage returnErrorMessage = new ReturnErrorMessage();
+                        returnErrorMessage.setErrorRow(i - 1);
+                        returnErrorMessage.setErrorMessage(e.getMessage());
+                    }
+                }
+                runAllListMap.put(currentSheetName,dataMapAtBscInfoTaxSchList);
+                continue;
+
+            }//当sheet页为B007利润表
+            else if("审核情况明细".equals(currentSheetName)){
+                List<Map<String, Object>> dataMapAtBscInfoAudAtaList = new ArrayList<Map<String, Object>>();
+                for(int i = 3;i<lastRowNum;i++){
+                    try {
+                        Row row = currentSheet.getRow(i);
+                        //数据
+                        Map<String, Object> dataMap = new HashMap<String, Object>();
+                        String checkString = "";
+                        for (int j = 0; j < 6; j++) {
+                            String valueStr = this.getCellValue(row.getCell(j));
+                            checkString = checkString.concat(valueStr);
+                            dataMap.put(AtBscInfoAudAta.get(j), valueStr.trim());
+                        }
+                        if("".equals(checkString.trim()) || checkString == null){
+                            continue;
+                        }else{
+                            dataMapAtBscInfoAudAtaList.add(dataMap);
+                        }
+                    } catch (Exception e) {
+                        ReturnErrorMessage returnErrorMessage = new ReturnErrorMessage();
+                        returnErrorMessage.setErrorRow(i - 1);
+                        returnErrorMessage.setErrorMessage(e.getMessage());
+                    }
+                }
+                runAllListMap.put(currentSheetName,dataMapAtBscInfoAudAtaList);
+                continue;
+
+            }//当Sheet页为企业景气调查表
+            else if("企业景气调查表".equals(currentSheetName) ){
+                List<Map<String, Object>> dataMapListB081 = new ArrayList<Map<String, Object>>();
+             //   List<Map<String,Object>> dataMapListB082=new ArrayList<Map<String,ObjectList>>();
+                for(int i = 5;i<lastRowNum;i++){
+                    try {
+                        Row row = currentSheet.getRow(i);
+                        //数据
+                        Map<String, Object> dataMap = new HashMap<String, Object>();
+                        String checkString = "";
+                        if(i<38){
+                            if(i!=8||i!=9||i!=13||i!=20||i!=23||i!=26||i!=31){
+                              for(int j=1;j<3;j++){
+                                  String valueStr = this.getCellValue(row.getCell(j));
+                                  checkString = checkString.concat(valueStr);
+                                  dataMap.put(AtBscInfoQuest.get(j), valueStr.trim());
+                              }
+                            }
+                        }
+                        if(i>=40){
+                            for(int j=1;j<6;j++){
+                            String valueStr = this.getCellValue(row.getCell(j));
+                            checkString = checkString.concat(valueStr);
+                            dataMap.put(AtbscInfoInd.get(j), valueStr.trim());
+                            }
+                        }
+                        if("".equals(checkString.trim()) || checkString == null){
+                            continue;
+                        }else{
+                         //   dataMapAtBscInfoAudAtaList.add(dataMap);
+                        }
+                    } catch (Exception e) {
+                        ReturnErrorMessage returnErrorMessage = new ReturnErrorMessage();
+                        returnErrorMessage.setErrorRow(i - 1);
+                        returnErrorMessage.setErrorMessage(e.getMessage());
+                    }
+                }
+                runAllListMap.put(currentSheetName,dataMapListB081);
+                continue;
+            }
+            else  if("产品表".equals(currentSheetName)){
+                List<Map<String, Object>> dataMapListAtBscInfoProSch = new ArrayList<Map<String, Object>>();
+                for(int i = 8;i<lastRowNum;i++){
+                    Row row = currentSheet.getRow(i);
+                    //数据
+                    Map<String, Object> dataMap = new HashMap<String, Object>();
+                    String checkString = "";
+                    String valueStr = this.getCellValue(row.getCell(i));
+                    if("产品代码".equals(valueStr.trim())){
+                        continue;
+                    }
+                    try {
+                        for (int j = 0; j < 20; j++) {
+                            checkString = checkString.concat(valueStr);
+                            dataMap.put(AtBscInfoProSch.get(j), valueStr.trim());
+                        }
+                        if("".equals(checkString.trim()) || checkString == null){
+                            continue;
+                        }else{
+                            dataMapListAtBscInfoProSch.add(dataMap);
+                        }
+                    }
+                catch (Exception e) {
+                        ReturnErrorMessage returnErrorMessage = new ReturnErrorMessage();
+                        returnErrorMessage.setErrorRow(i - 1);
+                        returnErrorMessage.setErrorMessage(e.getMessage());
+                    }
+                }
+                runAllListMap.put(currentSheetName,dataMapListAtBscInfoProSch);
+                continue;
+            }
+        }
+        Object test = runExcelData(runAllListMap,request,response);
+        returMessage = "111";
+        response.reset();
+        response.setCharacterEncoding("UTF-8");
+        response.setContentType("text/plain;charset=UTF-8");
+        return DatasetUtils.convertFromObject(null, "backString", returMessage);
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
